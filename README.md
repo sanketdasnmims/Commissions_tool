@@ -4,6 +4,23 @@ A suite of Python Flask web applications for SAP Commissions requirements manage
 
 ---
 
+## About
+
+This project was built to streamline the process of capturing, structuring, and validating requirements for SAP Commissions implementations.
+
+SAP Commissions projects are complex — they span multiple technical components (Workflow, ICM Engine, BTP/EDL, Embedded Analytics, Integrations) and typically require large volumes of structured requirements and test cases to go live. Writing these manually is time-consuming and error-prone.
+
+This toolset uses the Anthropic Claude AI API to:
+
+- **Extract** requirement candidates from raw source documents (PDFs, meeting notes, spec sheets)
+- **Compose** structured, approval-ready requirements mapped to the correct SAP Commissions component
+- **Generate** test cases automatically once a requirement is approved — with a hard gate preventing test generation on unapproved requirements
+- **Identify and analyse** uploaded financial and business documents using AI
+
+The project also includes a `CommSpec_Blueprint.md` that outlines the full production-grade architecture for scaling this into an enterprise tool — including a Next.js frontend, FastAPI backend, PostgreSQL database with vector search, and async background processing.
+
+---
+
 ## Applications
 
 | File | Description | Port |
