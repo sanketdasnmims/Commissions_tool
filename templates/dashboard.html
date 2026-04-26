@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block nav_dashboard %}nav-active{% endblock %}
+
+{% block content %}
+<div id="dashboard-root" class="space-y-6">
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-3 gap-4">
+    <div class="stat-card">
+      <div class="stat-label">Due Today</div>
+      <div class="stat-value" id="stat-today">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Overdue</div>
+      <div class="stat-value text-red-500" id="stat-overdue">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">This Week</div>
+      <div class="stat-value" id="stat-week">—</div>
+    </div>
+  </div>
+
+  <!-- Fairness -->
+  <section>
+    <h2 class="section-heading mb-3">This Week's Fairness</h2>
+    <div id="imbalance-banner" class="hidden mb-3 flex items-center gap-2 px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-800 dark:text-amber-300">
+      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-2.694-.833-3.464 0L3.34 16.5C2.57 18.333 3.532 20 5.07 20z"/></svg>
+      <span id="imbalance-text"></span>
+    </div>
+    <div id="fairness-cards" class="grid grid-cols-2 gap-4">
+      <!-- populated by JS -->
+    </div>
+  </section>
+
+  <!-- Today's Chores -->
+  <section>
+    <h2 class="section-heading mb-3">Due Today</h2>
+    <div id="today-list" class="space-y-2">
+      <div class="loading-placeholder">Loading...</div>
+    </div>
+  </section>
+
+  <!-- Overdue -->
+  <section>
+    <h2 class="section-heading mb-3 text-red-500">Overdue</h2>
+    <div id="overdue-list" class="space-y-2">
+      <div class="loading-placeholder">Loading...</div>
+    </div>
+  </section>
+
+  <!-- Upcoming -->
+  <section>
+    <h2 class="section-heading mb-3">Upcoming This Week</h2>
+    <div id="upcoming-list" class="space-y-2">
+      <div class="loading-placeholder">Loading...</div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDashboard() {
+  const data = await apiFetch('/api/dashboard');
+  if (!data) return;
+
+  // Stat cards
+  document.getElementById('stat-today').textContent = data.today.length;
+  document.getElementById('stat-overdue').textContent = data.overdue.length;
+  document.getElementById('stat-week').textContent = data.today.length + data.upcoming.length;
+
+  // Fairness
+  const fc = document.getElementById('fairness-cards');
+  fc.innerHTML = '';
+  const efforts = data.fairness.map(f => f.effort_week);
+  const maxEffort = Math.max(...efforts, 1);
+  const effortDiff = Math.abs((efforts[0] || 0) - (efforts[1] || 0));
+
+  data.fairness.forEach(f => {
+    const pct = Math.round((f.effort_week / maxEffort) * 100);
+    const card = document.createElement('div');
+    card.className = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5';
+    card.innerHTML = `
+      <div class="flex items-center gap-3 mb-4">
+        <span class="avatar-circle" style="background-color:${f.user.avatar_color}">${f.user.name[0]}</span>
+        <span class="font-semibold text-sm">${f.user.name}</span>
+      </div>
+      <div class="grid grid-cols-3 gap-3 text-center mb-4">
+        <div>
+          <div class="text-lg font-bold">${f.completed_week}</div>
+          <div class="text-xs text-slate-500">Completed</div>
+        </div>
+        <div>
+          <div class="text-lg font-bold">${f.effort_week}</div>
+          <div class="text-xs text-slate-500">Effort pts</div>
+        </div>
+        <div>
+          <div class="text-lg font-bold">${f.pending_count}</div>
+          <div class="text-xs text-slate-500">Pending</div>
+        </div>
+      </div>
+      <div class="text-xs text-slate-500 mb-1">Effort this week</div>
+      <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%;background-color:${f.user.avatar_color}"></div>
+      </div>
+    `;
+    fc.appendChild(card);
+  });
+
+  // Imbalance banner
+  if (effortDiff > 3 && data.fairness.length === 2) {
+    const heavier = data.fairness.find(f => f.effort_week === Math.max(...efforts));
+    const lighter = data.fairness.find(f => f.effort_week === Math.min(...efforts));
+    const banner = document.getElementById('imbalance-banner');
+    banner.classList.remove('hidden');
+    document.getElementById('imbalance-text').textContent =
+      `${heavier.user.name} has done ${effortDiff} more effort points than ${lighter.user.name} this week. Consider rebalancing.`;
+  }
+
+  // Chore lists
+  renderChoreList('today-list', data.today, 'today');
+  renderChoreList('overdue-list', data.overdue, 'overdue');
+  renderChoreList('upcoming-list', data.upcoming, 'upcoming');
+}
+
+function renderChoreList(containerId, chores, type) {
+  const container = document.getElementById(containerId);
+  if (!chores.length) {
+    container.innerHTML = `<div class="empty-state">No ${type === 'overdue' ? 'overdue' : type === 'today' ? "chores due today" : "upcoming chores"}</div>`;
+    return;
+  }
+  container.innerHTML = chores.map(c => choreRowHtml(c, type)).join('');
+}
+
+function choreRowHtml(c, type) {
+  const priorityDot = `<span class="priority-dot priority-${c.priority}" title="${c.priority}"></span>`;
+  const categoryBadge = `<span class="cat-badge cat-${(c.category||'general').toLowerCase()}">${c.category || 'General'}</span>`;
+  const userBadge = c.assigned_user
+    ? `<span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style="background-color:${c.assigned_user.avatar_color}20;color:${c.assigned_user.avatar_color}">
+        <span class="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center text-white text-[9px] font-bold" style="background-color:${c.assigned_user.avatar_color}">${c.assigned_user.name[0]}</span>
+        ${c.assigned_user.name}
+       </span>`
+    : `<span class="text-xs text-slate-400">Unassigned</span>`;
+
+  const effortHtml = effortDots(c.estimated_effort);
+  const dueDateHtml = c.due_date
+    ? `<span class="text-xs text-slate-400">${formatDate(c.due_date)}</span>`
+    : '';
+
+  const rowClass = type === 'overdue'
+    ? 'chore-row border-l-2 border-l-red-400'
+    : type === 'today' && c.status === 'in-progress'
+    ? 'chore-row border-l-2 border-l-indigo-400'
+    : 'chore-row';
+
+  return `
+    <div class="${rowClass}" id="chore-row-${c.id}">
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        ${priorityDot}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-medium text-sm">${c.title}</span>
+            ${categoryBadge}
+            ${userBadge}
+            ${effortHtml}
+          </div>
+          ${dueDateHtml}
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <button onclick="handleComplete(${c.id})" class="action-btn text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30" title="Mark complete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        </button>
+        <button onclick="handleSnooze(${c.id})" class="action-btn text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" title="Snooze 1 day">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </button>
+        <button onclick="openChoreModal(${c.id})" class="action-btn text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700" title="Edit">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function handleComplete(id) {
+  const ok = await completeChore(id);
+  if (ok) {
+    document.getElementById(`chore-row-${id}`)?.remove();
+    showToast('Chore marked complete', 'success');
+    loadDashboard();
+  }
+}
+
+async function handleSnooze(id) {
+  const ok = await snoozeChore(id, 1);
+  if (ok) {
+    showToast('Snoozed 1 day', 'success');
+    loadDashboard();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadDashboard);
+window.onChoreModalSaved = loadDashboard;
+</script>
+{% endblock %}

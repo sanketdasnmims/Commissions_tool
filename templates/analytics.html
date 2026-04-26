@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title_suffix %} — Analytics{% endblock %}
+{% block page_title %}Analytics{% endblock %}
+{% block nav_analytics %}nav-active{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Period toggle -->
+  <div class="flex items-center gap-2">
+    <span class="text-sm text-slate-500 font-medium">Period:</span>
+    <div class="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+      <button id="btn-week" onclick="setPeriod('week')"
+        class="period-btn period-active px-4 py-1.5 text-sm font-medium rounded-md transition-colors">
+        This Week
+      </button>
+      <button id="btn-month" onclick="setPeriod('month')"
+        class="period-btn px-4 py-1.5 text-sm font-medium rounded-md transition-colors text-slate-500 hover:text-slate-700">
+        This Month
+      </button>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-3 gap-4">
+    <div class="stat-card">
+      <div class="stat-label">Completed</div>
+      <div class="stat-value" id="a-completed">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Effort</div>
+      <div class="stat-value" id="a-effort">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Overdue</div>
+      <div class="stat-value text-red-500" id="a-overdue">—</div>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="grid grid-cols-2 gap-4">
+
+    <!-- Effort split -->
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4 uppercase tracking-wide">Effort Split</h3>
+      <div class="flex justify-center">
+        <canvas id="effort-chart" width="220" height="220"></canvas>
+      </div>
+      <div id="effort-legend" class="mt-4 space-y-2"></div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4 uppercase tracking-wide">Effort by Category</h3>
+      <canvas id="category-chart" height="220"></canvas>
+    </div>
+
+  </div>
+
+  <!-- Weekly trend (full width) -->
+  <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-slate-600 dark:text-slate-400 mb-4 uppercase tracking-wide">Weekly Trend — Chores Completed</h3>
+    <canvas id="trend-chart" height="120"></canvas>
+  </div>
+
+  <!-- Per-person detail -->
+  <div class="grid grid-cols-2 gap-4" id="user-detail">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- Overdue chores -->
+  <div>
+    <h3 class="section-heading mb-3">Currently Overdue</h3>
+    <div id="overdue-list" class="space-y-2">
+      <div class="loading-placeholder">Loading…</div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script>
+let currentPeriod = 'week';
+let effortChart, categoryChart, trendChart;
+
+function setPeriod(p) {
+  currentPeriod = p;
+  document.getElementById('btn-week').classList.toggle('period-active', p === 'week');
+  document.getElementById('btn-week').classList.toggle('bg-white', p === 'week');
+  document.getElementById('btn-week').classList.toggle('shadow-sm', p === 'week');
+  document.getElementById('btn-week').classList.toggle('text-slate-700', p === 'week');
+  document.getElementById('btn-week').classList.toggle('text-slate-500', p !== 'week');
+  document.getElementById('btn-month').classList.toggle('period-active', p === 'month');
+  document.getElementById('btn-month').classList.toggle('bg-white', p === 'month');
+  document.getElementById('btn-month').classList.toggle('shadow-sm', p === 'month');
+  document.getElementById('btn-month').classList.toggle('text-slate-700', p === 'month');
+  document.getElementById('btn-month').classList.toggle('text-slate-500', p !== 'month');
+  loadAnalytics();
+}
+
+async function loadAnalytics() {
+  const data = await apiFetch(`/api/analytics?period=${currentPeriod}`);
+  if (!data) return;
+
+  // Stat cards
+  document.getElementById('a-completed').textContent = data.total_completed;
+  document.getElementById('a-effort').textContent    = data.total_effort + ' pts';
+  document.getElementById('a-overdue').textContent   = data.overdue_count;
+
+  // Effort donut chart
+  const userLabels  = data.user_stats.map(u => u.user.name);
+  const userEfforts = data.user_stats.map(u => u.effort);
+  const userColors  = data.user_stats.map(u => u.user.avatar_color);
+
+  if (effortChart) effortChart.destroy();
+  effortChart = new Chart(document.getElementById('effort-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: userLabels,
+      datasets: [{ data: userEfforts, backgroundColor: userColors, borderWidth: 2, borderColor: '#fff' }]
+    },
+    options: {
+      cutout: '65%',
+      plugins: { legend: { display: false } },
+      animation: { duration: 400 }
+    }
+  });
+
+  // Effort legend
+  const legend = document.getElementById('effort-legend');
+  const total = userEfforts.reduce((a, b) => a + b, 0) || 1;
+  legend.innerHTML = data.user_stats.map(u => `
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="w-3 h-3 rounded-full" style="background:${u.user.avatar_color}"></span>
+        <span class="text-sm">${u.user.name}</span>
+      </div>
+      <div class="text-sm font-semibold">${u.effort} pts <span class="text-slate-400 font-normal">(${Math.round(u.effort/total*100)}%)</span></div>
+    </div>
+  `).join('');
+
+  // Category chart
+  const catLabels  = data.category_breakdown.map(c => c.category);
+  const catEfforts = data.category_breakdown.map(c => c.effort);
+  const catColors  = ['#6366f1','#f59e0b','#10b981','#f43f5e','#3b82f6','#8b5cf6','#14b8a6','#f97316'];
+
+  if (categoryChart) categoryChart.destroy();
+  categoryChart = new Chart(document.getElementById('category-chart'), {
+    type: 'bar',
+    data: {
+      labels: catLabels,
+      datasets: [{
+        label: 'Effort pts',
+        data: catEfforts,
+        backgroundColor: catColors.slice(0, catLabels.length),
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      },
+      animation: { duration: 400 }
+    }
+  });
+
+  // Weekly trend
+  const weeks = data.weekly_trends.map(w => w.week);
+  const trendDatasets = _users.map(u => ({
+    label: u.name,
+    data: data.weekly_trends.map(w => w.data[u.name] || 0),
+    borderColor: u.avatar_color,
+    backgroundColor: u.avatar_color + '22',
+    tension: 0.35,
+    fill: true,
+    borderWidth: 2,
+    pointRadius: 3,
+  }));
+
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trend-chart'), {
+    type: 'line',
+    data: { labels: weeks, datasets: trendDatasets },
+    options: {
+      plugins: { legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } } },
+      scales: {
+        x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, stepSize: 1 }, beginAtZero: true }
+      },
+      animation: { duration: 400 }
+    }
+  });
+
+  // Per-user detail cards
+  const detail = document.getElementById('user-detail');
+  detail.innerHTML = data.user_stats.map(u => `
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="avatar-circle" style="background-color:${u.user.avatar_color}">${u.user.name[0]}</span>
+        <span class="font-semibold">${u.user.name}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3">
+          <div class="text-2xl font-bold">${u.completed}</div>
+          <div class="text-xs text-slate-500 mt-0.5">Completed</div>
+        </div>
+        <div class="bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3">
+          <div class="text-2xl font-bold">${u.effort}</div>
+          <div class="text-xs text-slate-500 mt-0.5">Effort pts</div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  // Overdue list
+  const ol = document.getElementById('overdue-list');
+  if (!data.overdue_chores.length) {
+    ol.innerHTML = '<div class="empty-state">No overdue chores 🎉</div>';
+  } else {
+    ol.innerHTML = data.overdue_chores.map(c => `
+      <div class="chore-row border-l-2 border-l-red-400">
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          ${priorityDot(c.priority)}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-medium text-sm">${c.title}</span>
+              ${catBadge(c.category)}
+              ${userBadge(c.assigned_user)}
+            </div>
+            <span class="text-xs text-red-500 font-medium">${formatDate(c.due_date)}</span>
+          </div>
+        </div>
+        <button onclick="handleComplete(${c.id})" class="action-btn text-emerald-600 hover:bg-emerald-50" title="Mark complete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        </button>
+      </div>
+    `).join('');
+  }
+}
+
+async function handleComplete(id) {
+  const ok = await completeChore(id);
+  if (ok) { showToast('Marked complete', 'success'); loadAnalytics(); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // init period button style
+  document.getElementById('btn-week').classList.add('bg-white', 'shadow-sm', 'text-slate-700');
+  document.getElementById('btn-month').classList.add('text-slate-500');
+  loadAnalytics();
+});
+</script>
+
+<style>
+.period-btn { cursor: pointer; border: none; background: transparent; font-family: inherit; }
+.period-active { background: #fff !important; box-shadow: 0 1px 3px rgba(0,0,0,0.1); color: #1e293b !important; }
+</style>
+{% endblock %}

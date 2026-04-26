@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChoreBoard{% block title_suffix %} — Dashboard{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'media',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            sidebar: '#0f172a',
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body class="h-full bg-slate-50 dark:bg-slate-900 font-sans text-slate-800 dark:text-slate-200">
+  <div class="flex h-full min-h-screen">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-60 flex-shrink-0 bg-slate-900 flex flex-col">
+      <!-- Logo -->
+      <div class="px-5 py-5 border-b border-slate-700/60">
+        <a href="/" class="flex items-center gap-2.5 text-white">
+          <span class="text-lg">🏠</span>
+          <span class="font-semibold text-base tracking-tight">ChoreBoard</span>
+        </a>
+      </div>
+
+      <!-- Nav -->
+      <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="/" class="nav-link {% block nav_dashboard %}{% endblock %}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+          Dashboard
+        </a>
+        <a href="/chores" class="nav-link {% block nav_chores %}{% endblock %}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          Chores
+        </a>
+        <a href="/calendar" class="nav-link {% block nav_calendar %}{% endblock %}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          Calendar
+        </a>
+        <a href="/analytics" class="nav-link {% block nav_analytics %}{% endblock %}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Analytics
+        </a>
+      </nav>
+
+      <!-- Users -->
+      <div class="px-4 py-4 border-t border-slate-700/60 space-y-2" id="sidebar-users">
+        <!-- populated by JS -->
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- Top bar -->
+      <header class="h-14 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-6 flex-shrink-0">
+        <h1 class="text-base font-semibold text-slate-800 dark:text-slate-100" id="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+        <button onclick="openChoreModal()" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Chore
+        </button>
+      </header>
+
+      <!-- Content -->
+      <main class="flex-1 overflow-auto p-6">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <!-- ── Global Chore Modal ────────────────────────────────────────── -->
+  <div id="chore-modal" class="modal-backdrop hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="modal-panel bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+        <h2 class="text-base font-semibold" id="modal-title">Add Chore</h2>
+        <button onclick="closeChoreModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="chore-form" class="px-6 py-5 space-y-4" onsubmit="submitChoreForm(event)">
+        <input type="hidden" id="chore-edit-id" value="" />
+
+        <div>
+          <label class="form-label">Title <span class="text-red-500">*</span></label>
+          <input type="text" id="chore-title" required class="form-input" placeholder="e.g. Vacuum living room" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Category</label>
+            <select id="chore-category" class="form-input">
+              <option value="Kitchen">Kitchen</option>
+              <option value="Cleaning">Cleaning</option>
+              <option value="Laundry">Laundry</option>
+              <option value="Outdoor">Outdoor</option>
+              <option value="Errands">Errands</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="General">General</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Assigned To</label>
+            <select id="chore-assigned" class="form-input">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Due Date</label>
+            <input type="date" id="chore-due-date" class="form-input" />
+          </div>
+          <div>
+            <label class="form-label">Frequency</label>
+            <select id="chore-frequency" class="form-input">
+              <option value="once">Once</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Bi-weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="form-label">Priority</label>
+            <select id="chore-priority" class="form-input">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Effort (1–5)</label>
+            <select id="chore-effort" class="form-input">
+              <option value="1">1 — Quick</option>
+              <option value="2" selected>2 — Easy</option>
+              <option value="3">3 — Moderate</option>
+              <option value="4">4 — Involved</option>
+              <option value="5">5 — Major</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="form-label">Status</label>
+          <select id="chore-status" class="form-input">
+            <option value="pending">Pending</option>
+            <option value="in-progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="form-label">Description</label>
+          <textarea id="chore-description" rows="2" class="form-input resize-none" placeholder="Optional details..."></textarea>
+        </div>
+
+        <div>
+          <label class="form-label">Notes</label>
+          <textarea id="chore-notes" rows="2" class="form-input resize-none" placeholder="Private notes..."></textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-2">
+          <button type="button" onclick="closeChoreModal()" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors">Save Chore</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-[60] space-y-2 pointer-events-none"></div>
+
+  <!-- Confirm dialog -->
+  <div id="confirm-dialog" class="hidden fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40">
+    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm p-6">
+      <h3 class="text-base font-semibold mb-2" id="confirm-title">Confirm</h3>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mb-5" id="confirm-message">Are you sure?</p>
+      <div class="flex justify-end gap-3">
+        <button onclick="confirmResolve(false)" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md transition-colors">Cancel</button>
+        <button onclick="confirmResolve(true)" class="px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocID — Document Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
+  <style>
+    body { -webkit-font-smoothing: antialiased; }
+    #drop-zone { transition: background 0.2s, border-color 0.2s; }
+    #drop-zone.dragover { background: #eef2ff; border-color: #6366f1; }
+
+    .bubble-user {
+      background: #6366f1; color: #fff;
+      border-radius: 1rem 1rem 0.25rem 1rem;
+      padding: 0.625rem 0.875rem; max-width: 78%; align-self: flex-end;
+      font-size: 0.875rem; line-height: 1.5;
+    }
+    .bubble-ai {
+      background: #f8fafc; color: #1e293b; border: 1px solid #e2e8f0;
+      border-radius: 1rem 1rem 1rem 0.25rem;
+      padding: 0.625rem 0.875rem; max-width: 78%; align-self: flex-start;
+      font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap;
+    }
+
+    .typing-dot { width:6px; height:6px; border-radius:50%; background:#94a3b8; animation:bounce 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay:0.2s; }
+    .typing-dot:nth-child(3) { animation-delay:0.4s; }
+    @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-6px)} }
+
+    mark { background:#fef08a; color:#713f12; border-radius:2px; padding:0 2px; }
+    .match-block { font-family:monospace; font-size:0.78rem; line-height:1.6;
+      white-space:pre-wrap; background:#f8fafc; border:1px solid #e2e8f0;
+      border-radius:0.5rem; padding:0.625rem 0.75rem; color:#334155; }
+
+    .conf-high   { background:#dcfce7; color:#15803d; }
+    .conf-medium { background:#fef9c3; color:#854d0e; }
+    .conf-low    { background:#fee2e2; color:#991b1b; }
+
+    .field-row { display:flex; gap:0.5rem; font-size:0.8125rem; padding:0.375rem 0;
+      border-bottom:1px solid #f1f5f9; }
+    .field-key { font-weight:500; color:#64748b; min-width:9rem; flex-shrink:0; }
+    .field-val { color:#1e293b; }
+
+    .kw-chip { display:inline-flex; align-items:center; gap:4px;
+      background:#f1f5f9; color:#475569; border-radius:9999px;
+      padding:2px 10px; font-size:0.75rem; font-weight:500; }
+    .kw-chip-remove { cursor:pointer; color:#94a3b8; font-size:0.85rem; margin-left:2px; }
+    .kw-chip-remove:hover { color:#ef4444; }
+
+    .rule-item { border-bottom:1px solid #f1f5f9; }
+    .rule-item:last-child { border-bottom:none; }
+    .rule-item .rule-actions { opacity:0; transition:opacity 0.15s; }
+    .rule-item:hover .rule-actions { opacity:1; }
+
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+  </style>
+</head>
+<body class="bg-slate-100 font-sans min-h-screen flex flex-col"
+      ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+
+<!-- Header -->
+<header class="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between flex-shrink-0">
+  <div class="flex items-center gap-2.5">
+    <div class="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-sm font-bold">D</div>
+    <span class="font-semibold text-slate-800 text-base">DocID</span>
+    <span class="text-slate-400 text-sm font-normal">— Document Intelligence</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <span id="doc-badge" class="hidden items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      <span id="doc-badge-name"></span>
+    </span>
+    <a id="download-btn" href="/api/download" class="hidden items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 text-slate-600 hover:text-indigo-600 text-xs font-medium rounded-full transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+      </svg>
+      Download
+    </a>
+    <button id="clear-btn" onclick="clearDocument()" class="hidden text-sm text-slate-500 hover:text-red-500 transition-colors font-medium">
+      ✕ Clear
+    </button>
+  </div>
+</header>
+
+<!-- Main grid: left panel + chat -->
+<div class="flex-1 flex overflow-hidden p-4 gap-4">
+
+  <!-- Left panel -->
+  <div class="w-96 flex-shrink-0 flex flex-col gap-4 overflow-y-auto">
+
+    <!-- Upload zone -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-5 pt-4 pb-2">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Document</h2>
+      </div>
+      <div id="drop-zone"
+        class="mx-4 mb-4 border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40"
+        onclick="document.getElementById('file-input').click()"
+        ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <input type="file" id="file-input" class="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv" onchange="handleFileSelect(event)" />
+        <div id="upload-icon" class="flex flex-col items-center gap-3">
+          <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-600">Drop a document here</p>
+            <p class="text-xs text-slate-400 mt-0.5">PDF, PNG, JPG, WEBP, TXT, CSV</p>
+          </div>
+        </div>
+        <div id="upload-loading" class="hidden flex-col items-center gap-2">
+          <div class="flex gap-1.5">
+            <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+          </div>
+          <p class="text-sm text-indigo-600 font-medium">Analysing document…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Identification result -->
+    <div id="id-panel" class="hidden bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Identified as</div>
+          <div class="text-lg font-bold text-slate-800" id="id-type">—</div>
+        </div>
+        <span id="id-confidence" class="px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0 mt-1"></span>
+      </div>
+      <p class="text-sm text-slate-600 leading-relaxed" id="id-summary"></p>
+      <div id="id-fields" class="space-y-0.5"></div>
+      <div id="id-parties-wrap" class="hidden">
+        <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">Parties</div>
+        <div id="id-parties" class="flex flex-wrap gap-1.5"></div>
+      </div>
+    </div>
+
+    <!-- Rule matches -->
+    <div id="rule-matches-panel" class="hidden bg-white rounded-xl border border-emerald-200 p-4">
+      <div class="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">Classification Rules Matched</div>
+      <div id="rule-matches-list" class="space-y-1.5"></div>
+    </div>
+
+    <!-- Classification Rules -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <span class="text-sm font-semibold text-slate-700 uppercase tracking-wide text-xs">Classification Rules</span>
+        <button onclick="toggleRuleForm()" class="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          Add Rule
+        </button>
+      </div>
+
+      <!-- Add/Edit form -->
+      <div id="rule-form" class="hidden p-4 bg-slate-50 border-b border-slate-200 space-y-3">
+        <input type="hidden" id="rule-edit-id" value="" />
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">Classification Label</label>
+          <input type="text" id="rule-label-input" placeholder="e.g. Balance Sheet"
+            class="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">Keywords
+            <span class="font-normal text-slate-400">(type + Enter to add)</span>
+          </label>
+          <div class="flex gap-1.5">
+            <input type="text" id="rule-kw-input" placeholder="Add keyword…"
+              class="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              onkeydown="handleKwInput(event)" />
+            <button onclick="addKwFromInput()" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm rounded-lg">+</button>
+          </div>
+          <div id="rule-chips" class="flex flex-wrap gap-1.5 mt-2 min-h-[1.5rem]"></div>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button onclick="saveRule()" class="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">Save Rule</button>
+          <button onclick="cancelRuleForm()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium rounded-lg transition-colors">Cancel</button>
+        </div>
+      </div>
+
+      <div id="rules-list" class="divide-y divide-slate-50 p-2">
+        <p id="rules-empty" class="text-xs text-slate-400 text-center py-4">No rules yet. Add a rule to auto-classify documents by keyword.</p>
+      </div>
+    </div>
+
+    <!-- Keyword Search -->
+    <div id="search-panel" class="hidden bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Search Document</h2>
+      <div class="flex gap-2">
+        <input type="text" id="search-input" placeholder="Search document…"
+          class="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          onkeydown="if(event.key==='Enter') runSearch()" />
+        <button onclick="runSearch()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </button>
+      </div>
+      <div id="search-status" class="text-xs text-slate-400 mt-2 hidden"></div>
+      <div id="search-results" class="mt-3 space-y-2 max-h-72 overflow-y-auto"></div>
+    </div>
+
+  </div>
+
+  <!-- Chat panel -->
+  <div class="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+        <span class="text-sm font-semibold text-slate-700">Document Chat</span>
+      </div>
+      <button onclick="clearChat()" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">Clear chat</button>
+    </div>
+
+    <div id="chat-messages" class="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-3">
+      <div id="chat-empty" class="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16">
+        <div class="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center">
+          <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6"
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-slate-700">No document loaded</p>
+          <p class="text-sm text-slate-400 mt-1">Upload a document to start asking questions</p>
+        </div>
+        <div class="mt-2 grid grid-cols-1 gap-2 w-64">
+          <div class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-500 text-left">💡 "What is the total amount due?"</div>
+          <div class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-500 text-left">💡 "Summarise the key figures"</div>
+          <div class="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-500 text-left">💡 "Who are the parties involved?"</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 py-4 border-t border-slate-100">
+      <div class="flex gap-2">
+        <input type="text" id="chat-input" placeholder="Ask a question about the document…"
+          class="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"
+          disabled />
+        <button id="send-btn" onclick="sendMessage()"
+          class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors"
+          disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2"></div>
+
+<script>
+let docLoaded = false;
+
+// ── Drag & drop ─────────────────────────────────────────────────────────────
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('dragover');
+}
+function onDragLeave(e) {
+  if (!e.relatedTarget || !document.getElementById('drop-zone').contains(e.relatedTarget))
+    document.getElementById('drop-zone').classList.remove('dragover');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) uploadFile(file);
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) uploadFile(file);
+  e.target.value = '';
+}
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+async function uploadFile(file) {
+  document.getElementById('upload-icon').classList.add('hidden');
+  document.getElementById('upload-loading').classList.remove('hidden');
+  document.getElementById('upload-loading').classList.add('flex');
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const r    = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await r.json();
+
+    if (!r.ok) { showToast(data.error || 'Upload failed', 'error'); resetUpload(); return; }
+
+    renderIdentification(data);
+    renderRuleMatches(data.rule_matches || []);
+    docLoaded = true;
+
+    document.getElementById('doc-badge-name').textContent = file.name;
+    document.getElementById('doc-badge').classList.remove('hidden');
+    document.getElementById('doc-badge').classList.add('inline-flex');
+    document.getElementById('download-btn').classList.remove('hidden');
+    document.getElementById('download-btn').classList.add('inline-flex');
+    document.getElementById('clear-btn').classList.remove('hidden');
+
+    document.getElementById('chat-input').disabled = false;
+    document.getElementById('send-btn').disabled   = false;
+    document.getElementById('chat-input').focus();
+
+    showToast(`Identified as ${data.identification.document_type}`, 'success');
+  } catch (err) {
+    showToast('Upload error: ' + err.message, 'error');
+    resetUpload();
+  }
+}
+
+function resetUpload() {
+  document.getElementById('upload-icon').classList.remove('hidden');
+  document.getElementById('upload-loading').classList.add('hidden');
+  document.getElementById('upload-loading').classList.remove('flex');
+}
+
+// ── Identification panel ─────────────────────────────────────────────────────
+function renderIdentification(data) {
+  const id = data.identification;
+  document.getElementById('id-panel').classList.remove('hidden');
+  document.getElementById('id-type').textContent    = id.document_type || 'Unknown';
+  document.getElementById('id-summary').textContent = id.summary || '';
+
+  const conf    = (id.confidence || 'Low').toLowerCase();
+  const confEl  = document.getElementById('id-confidence');
+  confEl.textContent = id.confidence || 'Low';
+  confEl.className   = `px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0 mt-1 conf-${conf}`;
+
+  const fieldsEl = document.getElementById('id-fields');
+  fieldsEl.innerHTML = '';
+  const extras   = { Date: id.date, Period: id.period, Currency: id.currency, 'Total': id.total_amount };
+  const allFields = { ...extras, ...(id.key_fields || {}) };
+  Object.entries(allFields).forEach(([k, v]) => {
+    if (!v) return;
+    const row = document.createElement('div');
+    row.className = 'field-row';
+    row.innerHTML = `<span class="field-key">${k}</span><span class="field-val">${v}</span>`;
+    fieldsEl.appendChild(row);
+  });
+
+  const parties = id.parties || [];
+  if (parties.length) {
+    document.getElementById('id-parties-wrap').classList.remove('hidden');
+    document.getElementById('id-parties').innerHTML = parties.map(p =>
+      `<span class="px-2.5 py-1 bg-slate-100 text-slate-600 text-xs rounded-full">${p}</span>`).join('');
+  } else {
+    document.getElementById('id-parties-wrap').classList.add('hidden');
+  }
+
+  if (data.has_text) document.getElementById('search-panel').classList.remove('hidden');
+  else              document.getElementById('search-panel').classList.add('hidden');
+
+  resetUpload();
+}
+
+// ── Rule matches ─────────────────────────────────────────────────────────────
+function renderRuleMatches(matches) {
+  const panel = document.getElementById('rule-matches-panel');
+  const list  = document.getElementById('rule-matches-list');
+  if (!matches.length) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  list.innerHTML = matches.map(m => `
+    <div class="flex items-start gap-2 text-xs">
+      <span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold whitespace-nowrap">${m.label}</span>
+      <span class="text-slate-500 leading-relaxed">
+        Matched: ${m.matched_keywords.map(k => `<mark>${k}</mark>`).join(', ')}
+        (${m.matched_keywords.length}/${m.total_keywords} keywords)
+      </span>
+    </div>`).join('');
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const msg   = input.value.trim();
+  if (!msg || !docLoaded) return;
+
+  input.value = '';
+  appendBubble(msg, 'user');
+  hideEmptyState();
+
+  const typingId = appendTyping();
+  try {
+    const r    = await fetch('/api/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg }),
+    });
+    const data = await r.json();
+    removeTyping(typingId);
+    appendBubble(data.reply || data.error || 'Error', 'ai');
+  } catch (err) {
+    removeTyping(typingId);
+    appendBubble('Network error: ' + err.message, 'ai');
+  }
+}
+
+function appendBubble(text, role) {
+  const c = document.getElementById('chat-messages');
+  const d = document.createElement('div');
+  d.className = role === 'user' ? 'bubble-user' : 'bubble-ai';
+  d.textContent = text;
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+}
+function appendTyping() {
+  const c  = document.getElementById('chat-messages');
+  const id = 'typing-' + Date.now();
+  const d  = document.createElement('div');
+  d.id = id; d.className = 'bubble-ai flex items-center gap-1.5 py-3';
+  d.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+  c.appendChild(d); c.scrollTop = c.scrollHeight;
+  return id;
+}
+function removeTyping(id) { document.getElementById(id)?.remove(); }
+function hideEmptyState() { const e = document.getElementById('chat-empty'); if (e) e.style.display = 'none'; }
+function clearChat() {
+  const c = document.getElementById('chat-messages');
+  c.innerHTML = `<div id="chat-empty" class="flex-1 flex flex-col items-center justify-center text-center gap-2 py-16">
+    <p class="text-sm text-slate-400">Chat cleared. Ask another question.</p></div>`;
+}
+
+// ── Keyword search ────────────────────────────────────────────────────────────
+async function runSearch() {
+  const query   = document.getElementById('search-input').value.trim();
+  if (!query) return;
+  const status  = document.getElementById('search-status');
+  const results = document.getElementById('search-results');
+  status.textContent = 'Searching…'; status.classList.remove('hidden');
+  results.innerHTML  = '';
+  try {
+    const r    = await fetch('/api/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const data = await r.json();
+    if (!r.ok) { status.textContent = data.error || 'Error'; return; }
+    status.textContent = `${data.count} match${data.count !== 1 ? 'es' : ''} for "${query}"`;
+    results.innerHTML  = data.matches.length
+      ? data.matches.map(m => `<div><div class="text-xs text-slate-400 mb-1">Line ${m.line}</div>
+          <div class="match-block">${m.context}</div></div>`).join('')
+      : '<p class="text-xs text-slate-400 text-center py-2">No matches found</p>';
+  } catch (err) { status.textContent = 'Error: ' + err.message; }
+}
+
+// ── Clear document ────────────────────────────────────────────────────────────
+async function clearDocument() {
+  await fetch('/api/clear', { method: 'POST' });
+  docLoaded = false;
+  ['id-panel','search-panel','rule-matches-panel'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+  ['doc-badge','download-btn','clear-btn'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+  document.getElementById('chat-input').disabled = true;
+  document.getElementById('send-btn').disabled   = true;
+  document.getElementById('search-results').innerHTML = '';
+  document.getElementById('search-status').classList.add('hidden');
+  document.getElementById('file-input').value = '';
+  resetUpload();
+  const c = document.getElementById('chat-messages');
+  c.innerHTML = `<div id="chat-empty" class="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16">
+    <p class="text-sm text-slate-400">Upload a document to start chatting</p></div>`;
+  showToast('Document cleared', 'success');
+}
+
+// ── Classification Rules ──────────────────────────────────────────────────────
+let editingRuleId  = null;
+let pendingKeywords = [];
+
+function toggleRuleForm() {
+  const form = document.getElementById('rule-form');
+  if (form.classList.contains('hidden')) {
+    form.classList.remove('hidden');
+    editingRuleId   = null;
+    pendingKeywords = [];
+    document.getElementById('rule-label-input').value = '';
+    document.getElementById('rule-edit-id').value     = '';
+    document.getElementById('rule-kw-input').value    = '';
+    renderChips();
+    document.getElementById('rule-label-input').focus();
+  } else {
+    form.classList.add('hidden');
+  }
+}
+function cancelRuleForm() {
+  document.getElementById('rule-form').classList.add('hidden');
+  editingRuleId = null; pendingKeywords = [];
+}
+function handleKwInput(e) { if (e.key === 'Enter') { e.preventDefault(); addKwFromInput(); } }
+function addKwFromInput() {
+  const input = document.getElementById('rule-kw-input');
+  const kw    = input.value.trim();
+  if (kw && !pendingKeywords.includes(kw)) { pendingKeywords.push(kw); renderChips(); }
+  input.value = ''; input.focus();
+}
+function removeKw(kw) {
+  pendingKeywords = pendingKeywords.filter(k => k !== kw); renderChips();
+}
+function renderChips() {
+  document.getElementById('rule-chips').innerHTML = pendingKeywords.map(kw =>
+    `<span class="kw-chip">${kw}<span class="kw-chip-remove" onclick="removeKw('${kw.replace(/'/g,"\\'")}')">×</span></span>`
+  ).join('');
+}
+
+async function saveRule() {
+  const label = document.getElementById('rule-label-input').value.trim();
+  if (!label)              { showToast('Enter a classification label', 'error'); return; }
+  if (!pendingKeywords.length) { showToast('Add at least one keyword', 'error'); return; }
+
+  const isEdit = !!editingRuleId;
+  const r = await fetch(isEdit ? `/api/rules/${editingRuleId}` : '/api/rules', {
+    method: isEdit ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label, keywords: pendingKeywords }),
+  });
+  if (!r.ok) { showToast((await r.json()).error || 'Error', 'error'); return; }
+  cancelRuleForm();
+  await loadRules();
+  if (docLoaded) {
+    const rr = await fetch('/api/rules/reapply', { method: 'POST' });
+    renderRuleMatches((await rr.json()).rule_matches || []);
+  }
+  showToast(isEdit ? 'Rule updated' : 'Rule saved', 'success');
+}
+
+function startEditRule(ruleId, label, keywords) {
+  editingRuleId   = ruleId;
+  pendingKeywords = [...keywords];
+  document.getElementById('rule-label-input').value = label;
+  document.getElementById('rule-edit-id').value     = ruleId;
+  document.getElementById('rule-form').classList.remove('hidden');
+  renderChips();
+  document.getElementById('rule-label-input').focus();
+}
+
+async function deleteRule(ruleId) {
+  await fetch(`/api/rules/${ruleId}`, { method: 'DELETE' });
+  await loadRules();
+  if (docLoaded) {
+    const rr = await fetch('/api/rules/reapply', { method: 'POST' });
+    renderRuleMatches((await rr.json()).rule_matches || []);
+  }
+  showToast('Rule deleted', 'success');
+}
+
+async function loadRules() {
+  const r    = await fetch('/api/rules');
+  const data = await r.json();
+  renderRulesList(data.rules || []);
+}
+
+function renderRulesList(rules) {
+  const container = document.getElementById('rules-list');
+  const empty     = document.getElementById('rules-empty');
+  if (!rules.length) {
+    container.innerHTML = ''; container.appendChild(empty); empty.classList.remove('hidden'); return;
+  }
+  empty.classList.add('hidden');
+  container.innerHTML = rules.map(rule => `
+    <div class="rule-item rule-row group px-2 py-2.5">
+      <div class="flex items-start gap-2">
+        <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-full whitespace-nowrap">${rule.label}</span>
+        <div class="flex-1 flex flex-wrap gap-1 mt-0.5">
+          ${rule.keywords.map(k => `<span class="kw-chip">${k}</span>`).join('')}
+        </div>
+        <div class="rule-actions flex gap-1 flex-shrink-0">
+          <button onclick="startEditRule('${rule.id}','${rule.label.replace(/'/g,"\\'")}',${JSON.stringify(rule.keywords)})"
+            class="p-1 text-slate-300 hover:text-indigo-500 transition-colors" title="Edit">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+          </button>
+          <button onclick="deleteRule('${rule.id}')"
+            class="p-1 text-slate-300 hover:text-red-400 transition-colors" title="Delete">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(message, type = 'success') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  const colors = { success:'bg-white border-emerald-200 text-emerald-700', error:'bg-white border-red-200 text-red-700' };
+  t.className = `flex items-center gap-2 px-4 py-2.5 border rounded-xl shadow-lg text-sm font-medium ${colors[type]||colors.success}`;
+  t.innerHTML = `<span class="font-bold">${type==='success'?'✓':'✕'}</span> ${message}`;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+// ── Init: restore document if one was loaded in a previous session ─────────────
+loadRules();
+fetch('/api/docs-state').then(r => r.json()).then(data => {
+  if (data.loaded) {
+    renderIdentification(data);
+    renderRuleMatches(data.rule_matches || []);
+    docLoaded = true;
+    document.getElementById('doc-badge-name').textContent = data.filename;
+    document.getElementById('doc-badge').classList.remove('hidden');
+    document.getElementById('doc-badge').classList.add('inline-flex');
+    document.getElementById('download-btn').classList.remove('hidden');
+    document.getElementById('download-btn').classList.add('inline-flex');
+    document.getElementById('clear-btn').classList.remove('hidden');
+    document.getElementById('chat-input').disabled = false;
+    document.getElementById('send-btn').disabled   = false;
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>
